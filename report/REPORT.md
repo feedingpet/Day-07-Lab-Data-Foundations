@@ -217,7 +217,7 @@ Chạy 5 benchmark queries của nhóm trên implementation cá nhân của bạ
 Kết hợp các biện pháp Chunking cùng với 1 số thay đổi nhưu check văn bản có cấu trúc gì trước, kết hợp với LLM bên ngoài
 **Điều hay nhất tôi học được từ nhóm khác (qua demo):**
 > *Viết 2-3 câu:*
-
+CHuẩn bị thêm sơ đồ trực quan, chuẩn bị các metrics để đánh giá kewest quả như Recall, Precsion, demo.
 **Nếu làm lại, tôi sẽ thay đổi gì trong data strategy?**
 > *Viết 2-3 câu:*
 Kiểm tra cấu trúc văn bản và câu hỏi, kết hộp thêm 1 số phương pháp khác. Đồng thời phân tích cách cách chunking trước khi chốt thay vò chọn random 1 cashc chunking mà không biết cấu trúc data
