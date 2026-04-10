@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.agent import KnowledgeBaseAgent
+from src.chunking import FixedSizeChunker, RecursiveChunker, SentenceChunker
 from src.embeddings import (
     EMBEDDING_PROVIDER_ENV,
     LOCAL_EMBEDDING_MODEL,
@@ -19,17 +20,20 @@ from src.models import Document
 from src.store import EmbeddingStore
 
 SAMPLE_FILES = [
-    "data/python_intro.txt",
-    "data/vector_store_notes.md",
-    "data/rag_system_design.md",
-    "data/customer_support_playbook.txt",
-    "data/chunking_experiment_report.md",
-    "data/vi_retrieval_notes.md",
+    "data/TRẦN ANH TÔNG.md",
+    "data/TRẦN CẢNH.md",
+    "data/TRẦN HẠO.md",
+    "data/TRẦN KÍNH.md",
+    "data/TRẦN MẠNH.md",
+    "data/TRẦN MINH TÔNG.md",
+    "data/TRẦN NGẠC.md",
+    "data/Trần Nghệ Tông.md",
+    "data/TRẦN NHÂN TÔNG.md",
+    "data/NIÊN BIỀU KHÁI QUÁT CÁC SỰ KIỆN CÓ LIÊN QUAN TỚI VĂN HỌC.md" 
 ]
 
-
-def load_documents_from_files(file_paths: list[str]) -> list[Document]:
-    """Load documents from file paths for the manual demo."""
+def load_documents_from_files(file_paths: list[str], chunker=None) -> list[Document]:
+    """Load documents from file paths and apply chunking if provided."""
     allowed_extensions = {".md", ".txt"}
     documents: list[Document] = []
 
@@ -37,7 +41,6 @@ def load_documents_from_files(file_paths: list[str]) -> list[Document]:
         path = Path(raw_path)
 
         if path.suffix.lower() not in allowed_extensions:
-            print(f"Skipping unsupported file type: {path} (allowed: .md, .txt)")
             continue
 
         if not path.exists() or not path.is_file():
@@ -45,13 +48,30 @@ def load_documents_from_files(file_paths: list[str]) -> list[Document]:
             continue
 
         content = path.read_text(encoding="utf-8")
-        documents.append(
-            Document(
-                id=path.stem,
-                content=content,
-                metadata={"source": str(path), "extension": path.suffix.lower()},
+        
+        # Áp dụng Chunking ở đây
+        if chunker:
+            chunks = chunker.chunk(content)
+            for i, chunk_text in enumerate(chunks):
+                documents.append(
+                    Document(
+                        id=f"{path.stem}_chunk_{i}",
+                        content=chunk_text,
+                        metadata={
+                            "source": str(path), 
+                            "extension": path.suffix.lower(),
+                            "chunk_index": i
+                        },
+                    )
+                )
+        else:
+            documents.append(
+                Document(
+                    id=path.stem,
+                    content=content,
+                    metadata={"source": str(path), "extension": path.suffix.lower()},
+                )
             )
-        )
 
     return documents
 
@@ -64,25 +84,12 @@ def demo_llm(prompt: str) -> str:
 
 def run_manual_demo(question: str | None = None, sample_files: list[str] | None = None) -> int:
     files = sample_files or SAMPLE_FILES
-    query = question or "Summarize the key information from the loaded files."
+    query = question or "Trần Kính (Duệ Tông) là con ai và làm vua bao nhiêu năm?"
 
-    print("=== Manual File Test ===")
-    print("Accepted file types: .md, .txt")
-    print("Input file list:")
-    for file_path in files:
-        print(f"  - {file_path}")
+    print("=== BẮT ĐẦU KIỂM TRA CHUNKING ===")
+    print(f"Câu hỏi (Query): {query}\n")
 
-    docs = load_documents_from_files(files)
-    if not docs:
-        print("\nNo valid input files were loaded.")
-        print("Create files matching the sample paths above, then rerun:")
-        print("  python3 main.py")
-        return 1
-
-    print(f"\nLoaded {len(docs)} documents")
-    for doc in docs:
-        print(f"  - {doc.id}: {doc.metadata['source']}")
-
+    # Khởi tạo Embedder
     load_dotenv(override=False)
     provider = os.getenv(EMBEDDING_PROVIDER_ENV, "mock").strip().lower()
     if provider == "local":
@@ -98,24 +105,44 @@ def run_manual_demo(question: str | None = None, sample_files: list[str] | None 
     else:
         embedder = _mock_embed
 
-    print(f"\nEmbedding backend: {getattr(embedder, '_backend_name', embedder.__class__.__name__)}")
+    # Định nghĩa 3 chiến lược chunking
+    chunking_strategies = {
+        "FixedSize (Size: 500, Overlap: 50)": FixedSizeChunker(chunk_size=500, overlap=50),
+        "Sentence (Max: 3 sentences)": SentenceChunker(max_sentences_per_chunk=3),
+        "Recursive (Size: 500)": RecursiveChunker(chunk_size=500)
+    }
 
-    store = EmbeddingStore(collection_name="manual_test_store", embedding_fn=embedder)
-    store.add_documents(docs)
+    # Lặp qua từng chiến lược để test
+    for strategy_name, chunker in chunking_strategies.items():
+        print(f"\n" + "="*60)
+        print(f"CHIẾN LƯỢC: {strategy_name}")
+        print("="*60)
 
-    print(f"\nStored {store.get_collection_size()} documents in EmbeddingStore")
-    print("\n=== EmbeddingStore Search Test ===")
-    print(f"Query: {query}")
-    search_results = store.search(query, top_k=3)
-    for index, result in enumerate(search_results, start=1):
-        print(f"{index}. score={result['score']:.3f} source={result['metadata'].get('source')}")
-        print(f"   content preview: {result['content'][:120].replace(chr(10), ' ')}...")
+        # 1. Load và Cắt văn bản
+        docs = load_documents_from_files(files, chunker=chunker)
+        print(f"-> Đã chia thành {len(docs)} chunks.")
 
-    print("\n=== KnowledgeBaseAgent Test ===")
-    agent = KnowledgeBaseAgent(store=store, llm_fn=demo_llm)
-    print(f"Question: {query}")
-    print("Agent answer:")
-    print(agent.answer(query, top_k=3))
+        # 2. Tạo Vector Store mới (để tránh lẫn lộn data giữa các chiến lược)
+        safe_collection_name = f"store_{strategy_name.split()[0].lower()}"
+        store = EmbeddingStore(collection_name=safe_collection_name, embedding_fn=embedder)
+        store.add_documents(docs)
+
+        # 3. Tìm kiếm
+        search_results = store.search(query, top_k=3)
+        print(f"\n[+] TOP 3 CHUNKS LIÊN QUAN NHẤT:")
+        for index, result in enumerate(search_results, start=1):
+            score = result.get('score', 0.0)
+            source = result['metadata'].get('source', 'Unknown')
+            preview = result['content'][:150].replace(chr(10), ' ')
+            print(f"   {index}. Score: {score:.3f} | Nguồn: {source}")
+            print(f"      Nội dung: {preview}...")
+
+        # 4. Trả lời bằng Agent
+        agent = KnowledgeBaseAgent(store=store, llm_fn=demo_llm)
+        answer = agent.answer(query, top_k=3)
+        print(f"\n[+] CÂU TRẢ LỜI TỪ AGENT:")
+        print(answer)
+
     return 0
 
 
